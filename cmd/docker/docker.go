@@ -22,9 +22,11 @@ import (
 )
 
 func newDockerCommand(dockerCli *command.DockerCli) *cobra.Command {
+
 	opts := cliflags.NewClientOptions()
 	var flags *pflag.FlagSet
 
+	// 初始化 docker
 	cmd := &cobra.Command{
 		Use:              "docker [OPTIONS] COMMAND [ARG...]",
 		Short:            "A self-sufficient runtime for containers",
@@ -44,8 +46,10 @@ func newDockerCommand(dockerCli *command.DockerCli) *cobra.Command {
 		Version:               fmt.Sprintf("%s, build %s", cli.Version, cli.GitCommit),
 		DisableFlagsInUseLine: true,
 	}
+	//配置docker作为根命令
 	cli.SetupRootCommand(cmd)
 
+	//配置 flags
 	flags = cmd.Flags()
 	flags.BoolP("version", "v", false, "Print version information and quit")
 	flags.StringVar(&opts.ConfigDir, "config", cliconfig.Dir(), "Location of client config files")
@@ -53,11 +57,14 @@ func newDockerCommand(dockerCli *command.DockerCli) *cobra.Command {
 
 	setFlagErrorFunc(dockerCli, cmd, flags, opts)
 
+	// 添加帮助命令
 	setHelpFunc(dockerCli, cmd, flags, opts)
 
 	cmd.SetOutput(dockerCli.Out())
+	// 添加子命令
 	commands.AddCommands(cmd, dockerCli)
 
+	// 帮助信息不显示flag
 	disableFlagsInUseLine(cmd)
 	setValidateArgs(dockerCli, cmd, flags, opts)
 
@@ -165,12 +172,16 @@ func noArgs(cmd *cobra.Command, args []string) error {
 
 func main() {
 	// Set terminal emulation based on platform as required.
+	// 配置 stdin stdout stderr
 	stdin, stdout, stderr := term.StdStreams()
+	// 配置 log
 	logrus.SetOutput(stderr)
 
+	// 初始化docker命令行
 	dockerCli := command.NewDockerCli(stdin, stdout, stderr, contentTrustEnabled())
 	cmd := newDockerCommand(dockerCli)
 
+	// 执行docker命令
 	if err := cmd.Execute(); err != nil {
 		if sterr, ok := err.(cli.StatusError); ok {
 			if sterr.Status != "" {

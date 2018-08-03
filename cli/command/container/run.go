@@ -41,6 +41,7 @@ func NewRunCommand(dockerCli command.Cli) *cobra.Command {
 		Short: "Run a command in a new container",
 		Args:  cli.RequiresMinArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// 获取镜像
 			copts.Image = args[0]
 			if len(args) > 1 {
 				copts.Args = args[1:]
@@ -64,6 +65,7 @@ func NewRunCommand(dockerCli command.Cli) *cobra.Command {
 
 	command.AddPlatformFlag(flags, &opts.platform)
 	command.AddTrustVerificationFlags(flags, &opts.untrusted, dockerCli.ContentTrustEnabled())
+	// 添加 flags
 	copts = addFlags(flags)
 	return cmd
 }
@@ -98,6 +100,8 @@ func isLocalhost(ip string) bool {
 }
 
 func runRun(dockerCli command.Cli, flags *pflag.FlagSet, ropts *runOptions, copts *containerOptions) error {
+
+	// 获取代理配置
 	proxyConfig := dockerCli.ConfigFile().ParseProxyConfig(dockerCli.Client().DaemonHost(), copts.env.GetAll())
 	newEnv := []string{}
 	for k, v := range proxyConfig {
@@ -108,6 +112,7 @@ func runRun(dockerCli command.Cli, flags *pflag.FlagSet, ropts *runOptions, copt
 		}
 	}
 	copts.env = *opts.NewListOptsRef(&newEnv, nil)
+	// 解析flag -> 容器配置
 	containerConfig, err := parse(flags, copts)
 	// just in case the parse does not exit
 	if err != nil {
@@ -119,21 +124,32 @@ func runRun(dockerCli command.Cli, flags *pflag.FlagSet, ropts *runOptions, copt
 
 // nolint: gocyclo
 func runContainer(dockerCli command.Cli, opts *runOptions, copts *containerOptions, containerConfig *containerConfig) error {
+	// 容器配置
 	config := containerConfig.Config
+	// 主机配置
 	hostConfig := containerConfig.HostConfig
 	stdout, stderr := dockerCli.Out(), dockerCli.Err()
+	// docker客户端
 	client := dockerCli.Client()
 
+	// 如果设置了 --oom-kill-disable 会有Warning提示
+	// docker container run -it --oom-kill-disable --rm alpine sh
 	warnOnOomKillDisable(*hostConfig, stderr)
+	// 如果设置了 --dns 127.x.x.x 会有Warning提示
+	// docker container run -it --dns 127.0.0.1 --rm alpine sh
 	warnOnLocalhostDNS(*hostConfig, stderr)
 
 	config.ArgsEscaped = false
 
+	// 检测是否为 -d 守护模式
 	if !opts.detach {
+		// 非守护模式 检测tty
 		if err := dockerCli.In().CheckTty(config.AttachStdin, config.Tty); err != nil {
 			return err
 		}
 	} else {
+		// 同时设置了 -a 与 -d 会报错
+		// docker run -d -a STDOUT alpine sh
 		if copts.attach.Len() != 0 {
 			return errors.New("Conflicting options: -a and -d")
 		}
@@ -145,6 +161,8 @@ func runContainer(dockerCli command.Cli, opts *runOptions, copts *containerOptio
 	}
 
 	// Disable sigProxy when in TTY mode
+	// 如果设置了 TTY 会禁用 --sig-proxy
+	// --sig-proxy 默认开启
 	if config.Tty {
 		opts.sigProxy = false
 	}
@@ -152,13 +170,16 @@ func runContainer(dockerCli command.Cli, opts *runOptions, copts *containerOptio
 	// Telling the Windows daemon the initial size of the tty during start makes
 	// a far better user experience rather than relying on subsequent resizes
 	// to cause things to catch up.
+	// 如果运行时是windows 会初始化TTY
 	if runtime.GOOS == "windows" {
 		hostConfig.ConsoleSize[0], hostConfig.ConsoleSize[1] = dockerCli.Out().GetTtySize()
 	}
 
+	// 设置可取消的Context
 	ctx, cancelFun := context.WithCancel(context.Background())
 	defer cancelFun()
 
+	// 创建容器(非运行)
 	createResponse, err := createContainer(ctx, dockerCli, containerConfig, &opts.createOptions)
 	if err != nil {
 		reportError(stderr, "run", err.Error(), true)
