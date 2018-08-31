@@ -160,6 +160,7 @@ func newCIDFile(path string) (*cidFile, error) {
 }
 
 func createContainer(ctx context.Context, dockerCli command.Cli, containerConfig *containerConfig, opts *createOptions) (*container.ContainerCreateCreatedBody, error) {
+	// 获取容器创建配置
 	config := containerConfig.Config
 	hostConfig := containerConfig.HostConfig
 	networkingConfig := containerConfig.NetworkingConfig
@@ -169,13 +170,14 @@ func createContainer(ctx context.Context, dockerCli command.Cli, containerConfig
 		trustedRef reference.Canonical
 		namedRef   reference.Named
 	)
-
+	// 创建容器ID文件
 	containerIDFile, err := newCIDFile(hostConfig.ContainerIDFile)
 	if err != nil {
 		return nil, err
 	}
 	defer containerIDFile.Close()
 
+	// 解析镜像引用
 	ref, err := reference.ParseAnyReference(config.Image)
 	if err != nil {
 		return nil, err
@@ -194,9 +196,11 @@ func createContainer(ctx context.Context, dockerCli command.Cli, containerConfig
 	}
 
 	//create the container
+	// 创建容器
 	response, err := dockerCli.Client().ContainerCreate(ctx, config, hostConfig, networkingConfig, opts.name)
 
 	//if image not found try to pull it
+	// 如果没有找到镜像->尝试拉取镜像
 	if err != nil {
 		if apiclient.IsErrNotFound(err) && namedRef != nil {
 			fmt.Fprintf(stderr, "Unable to find image '%s' locally\n", reference.FamiliarString(namedRef))
@@ -211,6 +215,7 @@ func createContainer(ctx context.Context, dockerCli command.Cli, containerConfig
 				}
 			}
 			// Retry
+			// 拉取镜像之后, 尝试重新创建容器
 			var retryErr error
 			response, retryErr = dockerCli.Client().ContainerCreate(ctx, config, hostConfig, networkingConfig, opts.name)
 			if retryErr != nil {

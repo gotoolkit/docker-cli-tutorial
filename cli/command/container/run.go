@@ -124,12 +124,12 @@ func runRun(dockerCli command.Cli, flags *pflag.FlagSet, ropts *runOptions, copt
 
 // nolint: gocyclo
 func runContainer(dockerCli command.Cli, opts *runOptions, copts *containerOptions, containerConfig *containerConfig) error {
-	// 容器配置
+	// 获取容器配置
 	config := containerConfig.Config
-	// 主机配置
+	// 获取主机配置
 	hostConfig := containerConfig.HostConfig
 	stdout, stderr := dockerCli.Out(), dockerCli.Err()
-	// docker客户端
+	// 获取docker客户端
 	client := dockerCli.Client()
 
 	// 如果设置了 --oom-kill-disable 会有Warning提示
@@ -162,7 +162,6 @@ func runContainer(dockerCli command.Cli, opts *runOptions, copts *containerOptio
 
 	// Disable sigProxy when in TTY mode
 	// 如果设置了 TTY 会禁用 --sig-proxy
-	// --sig-proxy 默认开启
 	if config.Tty {
 		opts.sigProxy = false
 	}
@@ -179,13 +178,15 @@ func runContainer(dockerCli command.Cli, opts *runOptions, copts *containerOptio
 	ctx, cancelFun := context.WithCancel(context.Background())
 	defer cancelFun()
 
-	// 创建容器(非运行)
+	// 创建容器(不运行)
 	createResponse, err := createContainer(ctx, dockerCli, containerConfig, &opts.createOptions)
 	if err != nil {
 		reportError(stderr, "run", err.Error(), true)
 		return runStartContainerErr(err)
 	}
+	// --sig-proxy 默认开启 除非设置了 -t
 	if opts.sigProxy {
+		// 转发所有的信号给容器
 		sigc := ForwardAllSignals(ctx, dockerCli, createResponse.ID)
 		defer signal.StopCatch(sigc)
 	}
@@ -194,6 +195,7 @@ func runContainer(dockerCli command.Cli, opts *runOptions, copts *containerOptio
 		waitDisplayID chan struct{}
 		errCh         chan error
 	)
+	// 如果 stdout stderr 分离会打印出容器 ID
 	if !config.AttachStdout && !config.AttachStderr {
 		// Make this asynchronous to allow the client to write to stdin before having to read the ID
 		waitDisplayID = make(chan struct{})
@@ -204,10 +206,12 @@ func runContainer(dockerCli command.Cli, opts *runOptions, copts *containerOptio
 	}
 	attach := config.AttachStdin || config.AttachStdout || config.AttachStderr
 	if attach {
+		// 修改默认的分离快捷键
+		// https://stackoverflow.com/a/50019551
 		if opts.detachKeys != "" {
 			dockerCli.ConfigFile().DetachKeys = opts.detachKeys
 		}
-
+		// 如果有 attach stdin/stdout/stderr 会attach到容器
 		close, err := attachContainer(ctx, dockerCli, &errCh, config, createResponse.ID)
 
 		if err != nil {
@@ -216,9 +220,11 @@ func runContainer(dockerCli command.Cli, opts *runOptions, copts *containerOptio
 		defer close()
 	}
 
+	// 等待容器退出或者被移除
 	statusChan := waitExitOrRemoved(ctx, dockerCli, createResponse.ID, copts.autoRemove)
 
 	//start the container
+	// 启动容器
 	if err := client.ContainerStart(ctx, createResponse.ID, types.ContainerStartOptions{}); err != nil {
 		// If we have hijackedIOStreamer, we should notify
 		// hijackedIOStreamer we are going to exit and wait
@@ -236,6 +242,7 @@ func runContainer(dockerCli command.Cli, opts *runOptions, copts *containerOptio
 		return runStartContainerErr(err)
 	}
 
+	// 监视TTY
 	if (config.AttachStdin || config.AttachStdout || config.AttachStderr) && config.Tty && dockerCli.Out().IsTerminal() {
 		if err := MonitorTtySize(ctx, dockerCli, createResponse.ID, false); err != nil {
 			fmt.Fprintln(stderr, "Error monitoring TTY size:", err)
@@ -255,6 +262,8 @@ func runContainer(dockerCli command.Cli, opts *runOptions, copts *containerOptio
 	}
 
 	// Detached mode: wait for the id to be displayed and return.
+	// -d Detached模式会等待显示容器ID
+	// docker container run -d --rm alpine sh
 	if !config.AttachStdout && !config.AttachStderr {
 		// Detached mode
 		<-waitDisplayID

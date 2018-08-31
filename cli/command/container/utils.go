@@ -22,6 +22,7 @@ func waitExitOrRemoved(ctx context.Context, dockerCli command.Cli, containerID s
 	// Older versions used the Events API, and even older versions did not
 	// support server-side removal. This legacyWaitExitOrRemoved method
 	// preserves that old behavior and any issues it may have.
+	// 1.30之前版本的等待容器退出或移除
 	if versions.LessThan(dockerCli.Client().ClientVersion(), "1.30") {
 		return legacyWaitExitOrRemoved(ctx, dockerCli, containerID, waitRemove)
 	}
@@ -30,7 +31,7 @@ func waitExitOrRemoved(ctx context.Context, dockerCli command.Cli, containerID s
 	if waitRemove {
 		condition = container.WaitConditionRemoved
 	}
-
+	// 等待容器
 	resultC, errC := dockerCli.Client().ContainerWait(ctx, containerID, condition)
 
 	statusC := make(chan int)

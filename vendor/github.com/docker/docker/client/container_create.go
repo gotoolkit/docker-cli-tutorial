@@ -19,9 +19,11 @@ type configWrapper struct {
 
 // ContainerCreate creates a new container based in the given configuration.
 // It can be associated with a name, but it's not mandatory.
+// 基于给定的配置创建容器
 func (cli *Client) ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, containerName string) (container.ContainerCreateCreatedBody, error) {
 	var response container.ContainerCreateCreatedBody
 
+	// 检测版本
 	if err := cli.NewVersionError("1.25", "stop timeout"); config != nil && config.StopTimeout != nil && err != nil {
 		return response, err
 	}
@@ -42,6 +44,7 @@ func (cli *Client) ContainerCreate(ctx context.Context, config *container.Config
 		NetworkingConfig: networkingConfig,
 	}
 
+	// 请求api -> 创建容器
 	serverResp, err := cli.post(ctx, "/containers/create", query, body, nil)
 	if err != nil {
 		if serverResp.statusCode == 404 && strings.Contains(err.Error(), "No such image") {
