@@ -11,6 +11,7 @@ import (
 
 // SetupRootCommand sets default usage, help, and error handling for the
 // root command.
+// 主要命令
 func SetupRootCommand(rootCmd *cobra.Command) {
 	cobra.AddTemplateFunc("hasSubCommands", hasSubCommands)
 	cobra.AddTemplateFunc("hasManagementSubCommands", hasManagementSubCommands)
